@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+</head>
+<body>
+    <div id="wallet">
+        <h2> wallet </h2>
+        <input type="text" id="walletPrivateKey" placeholder="private key of your wallet"/></br>
+        <input type="text" id="walletPublicKey" placeholder="public key of your wallet"/></br>
+        <p>Transaction value (default value is 0.1 ether + gas fee):</p>
+        <input type="text" id="transValue" value="0.1" ></br>
+    </div>
+
+    <div id="endpoint1">
+        <h2> endpoint 1: </h2>
+        <input type="text" id="wsURL1" placeholder="web socket endpoint address"/></br>
+    </div>
+
+    <div id="endpoint2">
+        <h2> endpoint 2: </h2>
+        <input type="text" id="wsURL2" placeholder="web socket endpoint address"/></br>
+    </div>
+    <h2> *************** </h2>
+    <button type="button" onClick="run();">start</button>
+    <div id="info">
+    </div>
+</body>
+</html>
+
+
+
+<!--  *******************************************  -->
+
+<script type="text/javascript">
+
+var walletPrivateKey
+var walletPublicKey
+var transValue
+
+var wsURL1
+var web3_1
+var subscribe_1
+var timer_1
+
+var wsURL2
+var web3_2
+var subscribe_2
+var timer_2
+
+var node1IsReady
+var node2IsReady
+var pitch_time
+var catch_time
+var pitcher
+
+//make sure a missed transaction won't 
+var endedTrxHistory = []
+
+function run(){
+    init()
+    updateInfo("Program started")
+}
+
+function pitch(){
+    var web3_pitcher
+    updateInfo("***************")
+    updateInfo(pitcher + " is the sender now")
+    if(pitcher == "node 1")
+        web3_pitcher = web3_1
+    else
+        web3_pitcher = web3_2
+    node1IsReady = false
+    node2IsReady = false
+    pitch_time = new Date();
+    web3_pitcher.eth.sendTransaction({
+        from: walletPublicKey,
+        to: walletPublicKey,
+        value: transValue,
+        chain : 'ropsten',
+        hardfork: 'london',
+        gas:"21000"
+    }).on('sent', function(payload){
+    })
+    .on('sending', function(payload){
+        console.log("sending")
+        updateInfo( pitcher + " sent the transaction")
+    })
+    .on('transactionHash', function(hash){
+        console.log("in tx: " + hash)
+    })
+    .on('receipt', function(receipt){
+        updateInfo("transaction finalised")
+        endedTrxHistory.push(receipt.transactionHash)
+        console.log(endedTrxHistory)
+        if (!node1IsReady)
+            updateInfo("node 1 misses")
+        if (!node2IsReady)
+            updateInfo("node 2 misses")
+        if(pitcher == "node 1")
+            pitcher = "node 2"
+        else
+            pitcher = "node 1"
+        pitch()
+    })
+    .on('error',function(error){ 
+      console.log(error)
+    });
+}
+
+function initNode(node_name, wsURL, web3_name, subscribe_name, timer_name,readyFlag_name){
+    window[web3_name] = new Web3(new Web3.providers.WebsocketProvider(wsURL));
+    window[web3_name].eth.accounts.wallet.add(walletPrivateKey);
+    window[web3_name].eth.getBalance(walletPublicKey).then(function(object){
+        updateInfo(node_name + " connected")
+        console.log(node_name + " get balance:")
+        console.log(object)
+        window[subscribe_name] = window[web3_name].eth.subscribe('pendingTransactions')
+        .on("connected", function(subscriptionId){
+            updateInfo(node_name + " is ready, subscirption ID="+subscriptionId)
+            window[readyFlag_name] = true
+            if(node1IsReady && node2IsReady){
+                pitcher = node_name
+                setTimeout(pitch(), 5000);
+            }
+        })
+        .on("data", function(result){
+            txHash = result
+            window[timer_name] = new Date();
+            window[web3_name].eth.getTransaction(txHash).then(function(tx){
+                if(tx && tx.from !== undefined && tx.from == walletPublicKey && !window["endedTrxHistory"].includes(tx)){
+                    window[readyFlag_name] = true
+                    window[timer_name] = new Date();
+                    updateInfo(node_name +" catches the transaction after " +(window[timer_name]-pitch_time)+"ms.")
+                    console.log(tx)
+                    // updateInfo(tx.hash)
+                }
+            })
+        })
+    })
+}
+
+function init(){
+    walletPrivateKey = document.getElementById("walletPrivateKey").value
+    walletPublicKey = document.getElementById("walletPublicKey").value
+    wsURL1 = document.getElementById("wsURL1").value
+    wsURL2 = document.getElementById("wsURL2").value
+
+    node1IsReady = false
+    node2IsReady = false
+    
+    transValue = Web3.utils.toWei(document.getElementById("transValue").value,"ether")
+
+    initNode ("node 1",wsURL1,"web3_1","subscribe_1","timer_1","node1IsReady")
+    initNode ("node 2",wsURL2,"web3_2","subscribe_2","timer_2","node2IsReady")
+}
+
+function updateInfo(message){
+    document.getElementById("info").innerHTML += '<p>'+message+'</p>'
+}
+
+</script>
