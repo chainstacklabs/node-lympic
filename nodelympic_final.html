@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <style>
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+        }
+        
+        p,
+        h2,
+        h4 {
+            margin-block-start: 15px;
+            margin-block-end: 0px;
+        }
+        
+        #container {
+            position: relative;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            border: 5px solid orange;
+            padding: 0.5%;
+            width: 95%;
+            height: 95%;
+        }
+        
+        #banner {
+            position: relative;
+            background-image: url("https://raw.githubusercontent.com/wuzhong-zhu/node-lympic/main/resources/logo2.png");
+            background-repeat: no-repeat;
+            background-size: 100% 100%;
+            margin-top: 2%;
+            margin-bottom: 2%;
+            width: 100%;
+            height: 20%;
+            text-align: center;
+        }
+        
+        img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        input {
+            width: 90%;
+        }
+        
+        #wrapper {
+            width: 100%;
+            height: 69%;
+            padding: 0.5%;
+        }
+        
+        #left {
+            position: relative;
+            width: 25%;
+            height: 100%;
+            border: 1px solid orange;
+            padding: 0.5%;
+            text-align: left;
+            overflow: auto;
+            float: left;
+        }
+        
+        #right {
+            position: relative;
+            width: 70%;
+            height: 100%;
+            padding: 0.5%;
+            border: 1px solid orange;
+            text-align: center;
+            overflow: auto;
+            float: left;
+        }
+        
+        #entry {
+            position: relative;
+            overflow: auto;
+            height: 90%;
+            width: auto;
+        }
+        
+        #addNode {
+            position: absolute;
+            color: white;
+            font-size: large;
+            background-color: orange;
+            font-weight: bolder;
+            height: 30px;
+            bottom: 2%;
+            left: 5%;
+            right: 5%;
+        }
+        
+        #info {
+            position: relative;
+            overflow: auto;
+            height: 90%;
+            width: auto;
+        }
+        
+        #run {
+            position: absolute;
+            color: white;
+            font-size: large;
+            background-color: orange;
+            font-weight: bolder;
+            height: 30px;
+            bottom: 2%;
+            left: 20%;
+            right: 20%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <div id="banner">
+            <img src="https://raw.githubusercontent.com/wuzhong-zhu/node-lympic/main/resources/logo1.png">
+        </div>
+        <div id="wrapper">
+            <div id="left">
+                <div id="entry">
+                    <div id="wallet">
+                        <h2> config</h2>
+                        <p>Private key</p>
+                        <input type="text" id="walletPrivateKey" placeholder="private key of your wallet" /></br>
+                        <p>Public key</p>
+                        <input type="text" id="walletPublicKey" placeholder="public key of your wallet" /></br>
+                        <p>Number of rounds</p>
+                        <input type="text" id="epoch" value="1"></br>
+                        <p>Transaction value</p>
+                        <input type="text" id="transValue" value="0.1"></br>
+                        <p>Default value is 0.1 ether + gas fee</p>
+                        <h2> ************ </h2>
+                    </div>
+
+                    <div id="endpoints">
+                        <h2> endpoints </h2>
+                        <div id="endpoint1" type="nodediv">
+                            <h4> node 1: </h4>
+                            <input type="text" id="wsURL1" placeholder="web socket endpoint address" /></br>
+                        </div>
+                        <div id="endpoint2" type="nodediv">
+                            <h4> node 2: </h4>
+                            <input type="text" id="wsURL2" placeholder="web socket endpoint address" /></br>
+                        </div>
+                    </div>
+                </div>
+                <button id="addNode" type="button" onClick="addNode();">add node</button>
+            </div>
+            <div id="right">
+                <div id="info">
+                </div>
+                <button id="run" type="button" onClick="run();">start</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
+
+<!--  *******************************************  -->
+
+<script type="text/javascript">
+    var walletPrivateKey
+    var walletPublicKey
+    var transValue
+    var nodeNum = 2
+    var epoch = 5
+    var epoch1 = 5
+    var pitch_time
+    var pitcher
+
+    var nodes = []
+    var endedTrxHistory = []
+
+    function run() {
+        init()
+        updateInfo("Program started")
+        updateInfo("******")
+    }
+
+    function initNode(index, wsURL) {
+        nodes[index].isReady = false
+        nodes[index].web3 = new Web3(new Web3.providers.WebsocketProvider(wsURL));
+        nodes[index].web3.eth.accounts.wallet.add(walletPrivateKey);
+        nodes[index].web3.eth.getBalance(walletPublicKey).then(function(object) {
+            updateInfo(nodes[index].name + " connected")
+            console.log(nodes[index].name + " get balance:")
+            console.log(object)
+            nodes[index].subscription = nodes[index].web3.eth.subscribe('pendingTransactions')
+                .on("connected", function(subscriptionId) {
+                    updateInfo(nodes[index].name + " is ready, subscirption ID=" + subscriptionId)
+                    nodes[index].isReady = true
+                    if (allReady()) {
+                        pitcher = 0
+                        pitch()
+                    }
+                })
+                .on("data", function(result) {
+                    txHash = result
+                    nodes[index].timer = new Date();
+                    nodes[index].web3.eth.getTransaction(txHash).then(function(tx) {
+                        if (tx && tx.from !== undefined && tx.from == walletPublicKey && !window["endedTrxHistory"].includes(tx)) {
+                            nodes[index].isReady = true
+                            nodes[index].timer = new Date();
+                            updateInfo(nodes[index].name + " catches the transaction after " + (nodes[index].timer - pitch_time) + "ms.")
+                            nodes[index].totalTime += (nodes[index].timer - pitch_time)
+                            console.log(tx)
+                        }
+                    })
+                })
+        })
+    }
+
+    function pitch() {
+        var web3_pitcher = nodes[pitcher].web3
+        updateInfo("***************")
+        updateInfo("node " + (pitcher + 1) + " is the sender now")
+        for (let i = 0; i < nodeNum; i++) {
+            nodes[i].isReady = false
+        }
+        pitch_time = new Date();
+        web3_pitcher.eth.sendTransaction({
+                from: walletPublicKey,
+                to: walletPublicKey,
+                value: transValue,
+                gas: "21000"
+            }).on('sent', function(payload) {})
+            .on('sending', function(payload) {
+                console.log("sending")
+                updateInfo((pitcher + 1) + " sent the transaction")
+            })
+            .on('transactionHash', function(hash) {
+                console.log("in tx: " + hash)
+            })
+            .on('receipt', function(receipt) {
+                updateInfo("transaction finalised")
+                endedTrxHistory.push(receipt.transactionHash)
+                console.log(endedTrxHistory)
+                for (let i = 0; i < nodeNum; i++) {
+                    if (!nodes[i].isReady)
+                        updateInfo("node " + (i + 1) + " misses")
+                }
+                pitcher++
+                if (pitcher >= nodeNum) {
+                    pitcher = 0
+                    epoch1--
+                    updateInfo("round " + (epoch2 - epoch1))
+                }
+                if (epoch1 > 0)
+                    pitch()
+                else {
+                    end()
+                }
+            })
+            .on('error', function(error) {
+                console.log(error)
+            });
+    }
+
+    function end() {
+        updateInfo("End!")
+        var championIndex = 0
+        var championTime = 0
+        for (let i = 0; i < nodeNum; i++) {
+            if (nodes[i].totalTime > championTime) {
+                championIndex = i
+                championTime = nodes[i].totalTime
+            }
+        }
+        updateInfo("The Champion is node " + (championIndex + 1))
+        updateInfo("Average delay is " + (championTime / 1000 / nodeNum / epoch2) + " seconds!")
+        document.getElementById("info").innerHTML += '<img id="championGif" src="https://raw.githubusercontent.com/wuzhong-zhu/node-lympic/main/resources/giphy.gif">'
+        setTimeout(function() {
+            updateInfo("---end---")
+        }, 5000);
+    }
+
+    function init() {
+        walletPrivateKey = document.getElementById("walletPrivateKey").value
+        walletPublicKey = document.getElementById("walletPublicKey").value
+        epoch1 = document.getElementById("epoch").value
+        epoch2 = document.getElementById("epoch").value
+        transValue = Web3.utils.toWei(document.getElementById("transValue").value, "ether")
+
+        for (let i = 0; i < nodeNum; i++) {
+            nodes.push({
+                name: "node " + (i + 1),
+                isReady: false,
+                web3: null,
+                subscription: null,
+                timer: null,
+                totalTime: null,
+            })
+        }
+
+        for (let i = 0; i < nodeNum; i++) {
+            wsURL = document.getElementById("wsURL" + (i + 1)).value
+            initNode(i, wsURL)
+        }
+        console.log(nodes)
+    }
+
+    function updateInfo(message) {
+        document.getElementById("info").innerHTML += '<p>' + message + '</p>'
+        var objDiv = document.getElementById("info");
+        objDiv.scrollTop = objDiv.scrollHeight;
+    }
+
+    function allReady() {
+        for (let i = 0; i < nodeNum; i++) {
+            if (!nodes[i].isReady)
+                return false
+        }
+        return true
+    }
+
+    function addNode() {
+        nodeNum++;
+        document.getElementById("endpoints").innerHTML +=
+            '<div id="endpoint' + nodeNum + '" type="nodediv">' +
+            '<h4> node ' + nodeNum + ': </h4>' +
+            '<input type="text" id="wsURL' + nodeNum + '" placeholder="web socket endpoint address"><br>' +
+            '</div>'
+    }
+</script>
